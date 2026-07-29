@@ -129,22 +129,16 @@ export async function onRequestGet(context) {
       9 * 24 * 60 * 60 * 1000
     );
 
-    const competitions =
-      context.env.COMPETITIONS ||
-      "PL,PD,BL1,SA,FL1,CL";
-
     const upcomingPath =
-      "/matches" +
-      `?competitions=${encodeURIComponent(competitions)}` +
-      `&dateFrom=${formatDate(now)}` +
-      `&dateTo=${formatDate(future)}`;
+  "/matches" +
+  `?dateFrom=${formatDate(now)}` +
+  `&dateTo=${formatDate(future)}`;
 
-    const finishedPath =
-      "/matches" +
-      `?competitions=${encodeURIComponent(competitions)}` +
-      `&dateFrom=${formatDate(past)}` +
-      `&dateTo=${formatDate(now)}` +
-      "&status=FINISHED";
+const finishedPath =
+  "/matches" +
+  `?dateFrom=${formatDate(past)}` +
+  `&dateTo=${formatDate(now)}` +
+  "&status=FINISHED";
 
     const results = await Promise.all([
       callFootballData(
@@ -180,8 +174,8 @@ export async function onRequestGet(context) {
       upcoming,
       finished,
       source: "football-data.org",
-      competitions:
-        competitions.split(","),
+      competitionFilter:
+  "all-accessible-competitions",
       updatedAt:
         new Date().toISOString()
     });
