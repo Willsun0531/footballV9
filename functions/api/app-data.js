@@ -1,26 +1,34 @@
-const jsonResponse = (data, status = 200) => {
+const JSON_HEADERS = {
+  "Content-Type": "application/json; charset=utf-8",
+  "Cache-Control": "public, max-age=900"
+};
+
+function jsonResponse(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
-      "Content-Type": "application/json; charset=utf-8",
-      "Cache-Control": "public, max-age=900"
-    }
+    headers: JSON_HEADERS
   });
-};
+}
 
-const formatDate = (date) => {
+function formatDate(date) {
   return date.toISOString().slice(0, 10);
-};
+}
 
-const mapMatch = (match) => {
+function mapMatch(match) {
   return {
     id: match.id,
     utcDate: match.utcDate,
     status: match.status,
 
     competition: {
-      code: match.competition?.code || "",
-      name: match.competition?.name || "",
+      code:
+        match.competition?.code ||
+        "",
+
+      name:
+        match.competition?.name ||
+        "",
+
       area:
         match.area?.name ||
         match.competition?.area?.name ||
@@ -28,7 +36,10 @@ const mapMatch = (match) => {
     },
 
     home: {
-      id: match.homeTeam?.id,
+      id:
+        match.homeTeam?.id ||
+        null,
+
       name:
         match.homeTeam?.shortName ||
         match.homeTeam?.name ||
@@ -36,7 +47,10 @@ const mapMatch = (match) => {
     },
 
     away: {
-      id: match.awayTeam?.id,
+      id:
+        match.awayTeam?.id ||
+        null,
+
       name:
         match.awayTeam?.shortName ||
         match.awayTeam?.name ||
@@ -44,25 +58,39 @@ const mapMatch = (match) => {
     },
 
     score: {
-      home: match.score?.fullTime?.home,
-      away: match.score?.fullTime?.away
+      home:
+        match.score?.fullTime?.home ??
+        null,
+
+      away:
+        match.score?.fullTime?.away ??
+        null
     }
   };
-};
+}
 
 async function callFootballData(token, path) {
-  const response = await fetch(
-    "https://api.football-data.org/v4" + path,
-    {
-      method: "GET",
-      headers: {
-        "X-Auth-Token": token,
-        "Accept": "application/json"
-      }
-    }
-  );
+  const url =
+    "https://api.football-data.org/v4" +
+    path;
 
-  const data = await response.json();
+  const response = await fetch(url, {
+    method: "GET",
+    headers: {
+      "X-Auth-Token": token,
+      "Accept": "application/json"
+    }
+  });
+
+  let data;
+
+  try {
+    data = await response.json();
+  } catch (error) {
+    throw new Error(
+      "football-data.org returned a non-JSON response."
+    );
+  }
 
   if (!response.ok) {
     throw new Error(
@@ -75,13 +103,14 @@ async function callFootballData(token, path) {
 }
 
 export async function onRequestGet(context) {
-  const token = context.env.FOOTBALL_DATA_TOKEN;
+  const token =
+    context.env.FOOTBALL_DATA_TOKEN;
 
   if (!token) {
     return jsonResponse(
       {
         error:
-          "FOOTBALL_DATA_TOKEN has not been configured."
+          "FOOTBALL_DATA_TOKEN is not configured in the Pages project."
       },
       500
     );
@@ -91,39 +120,55 @@ export async function onRequestGet(context) {
     const now = new Date();
 
     const future = new Date(
-      now.getTime() + 7 * 24 * 60 * 60 * 1000
+      now.getTime() +
+      7 * 24 * 60 * 60 * 1000
     );
 
     const past = new Date(
-      now.getTime() - 120 * 24 * 60 * 60 * 1000
+      now.getTime() -
+      120 * 24 * 60 * 60 * 1000
     );
 
     const competitions =
       context.env.COMPETITIONS ||
-      "PL,PD,BL1,SA,FL1,CL,PPL,DED";
+      "PL,PD,BL1,SA,FL1,CL";
 
     const upcomingPath =
-      `/matches?competitions=${competitions}` +
+      "/matches" +
+      `?competitions=${encodeURIComponent(competitions)}` +
       `&dateFrom=${formatDate(now)}` +
       `&dateTo=${formatDate(future)}`;
 
     const finishedPath =
-      `/matches?competitions=${competitions}` +
+      "/matches" +
+      `?competitions=${encodeURIComponent(competitions)}` +
       `&dateFrom=${formatDate(past)}` +
       `&dateTo=${formatDate(now)}` +
-      `&status=FINISHED`;
+      "&status=FINISHED";
 
-    const [upcomingResult, finishedResult] =
-      await Promise.all([
-        callFootballData(token, upcomingPath),
-        callFootballData(token, finishedPath)
-      ]);
+    const results = await Promise.all([
+      callFootballData(
+        token,
+        upcomingPath
+      ),
+
+      callFootballData(
+        token,
+        finishedPath
+      )
+    ]);
+
+    const upcomingResult = results[0];
+    const finishedResult = results[1];
 
     const upcoming = (
       upcomingResult.matches || []
     )
       .filter((match) => {
-        return match.status !== "FINISHED";
+        return (
+          match.status !== "FINISHED" &&
+          match.status !== "CANCELLED"
+        );
       })
       .map(mapMatch);
 
@@ -135,17 +180,26 @@ export async function onRequestGet(context) {
       upcoming,
       finished,
       source: "football-data.org",
-      updatedAt: new Date().toISOString()
+      competitions:
+        competitions.split(","),
+      updatedAt:
+        new Date().toISOString()
     });
 
   } catch (error) {
     return jsonResponse(
       {
-        error: error.message,
-        source: "football-data.org"
+        error:
+          error.message ||
+          "Unknown football data error.",
+
+        source:
+          "football-data.org",
+
+        updatedAt:
+          new Date().toISOString()
       },
       502
     );
   }
 }
-`
