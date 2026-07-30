@@ -1,101 +1,87 @@
-const headers = {
+const H = {
   "content-type": "application/json; charset=utf-8",
-  "cache-control": "public, max-age=600"
+  "cache-control": "public, max-age=900"
 };
+const respond = (data, status = 200) =>
+  new Response(JSON.stringify(data), { status, headers: H });
 
-const json = (data, status = 200) =>
-  new Response(JSON.stringify(data), { status, headers });
-
-async function getJson(url) {
+async function fetchJson(url) {
   const response = await fetch(url);
   const data = await response.json();
-  if (!response.ok) {
-    throw new Error(data?.message || `The Odds API HTTP ${response.status}`);
-  }
+  if (!response.ok) throw new Error(data?.message || `HTTP ${response.status}`);
   return { data, response };
 }
 
-const priority = [
-  "soccer_brazil_campeonato",
-  "soccer_brazil_serie_b",
-  "soccer_epl",
-  "soccer_efl_champ",
-  "soccer_spain_la_liga",
-  "soccer_germany_bundesliga",
-  "soccer_italy_serie_a",
-  "soccer_france_ligue_one",
-  "soccer_uefa_champs_league",
-  "soccer_netherlands_eredivisie",
-  "soccer_portugal_primeira_liga"
+const priorityWords = [
+  "europa", "mls", "major league soccer", "norway", "eliteserien",
+  "sweden", "allsvenskan", "brazil", "brasileiro", "champions league",
+  "eredivisie", "primeira", "premier league", "la liga", "bundesliga",
+  "serie a", "ligue 1", "championship"
 ];
 
+function priorityScore(sport) {
+  const text = `${sport.key} ${sport.title} ${sport.description || ""}`.toLowerCase();
+  const index = priorityWords.findIndex((word) => text.includes(word));
+  return index < 0 ? 999 : index;
+}
+
 export async function onRequestGet(context) {
-  const apiKey = context.env.THE_ODDS_API_KEY;
-  if (!apiKey) return json({ error: "THE_ODDS_API_KEY未配置", events: [] }, 500);
+  const key = context.env.THE_ODDS_API_KEY;
+  if (!key) return respond({ error: "THE_ODDS_API_KEY未配置", events: [] }, 500);
 
   try {
-    const sportsUrl =
-      `https://api.the-odds-api.com/v4/sports/?apiKey=${encodeURIComponent(apiKey)}`;
-    const { data: sports } = await getJson(sportsUrl);
-
-    const activeSoccer = sports.filter(
-      (sport) => sport.group === "Soccer" && !sport.has_outrights
+    const sportsResult = await fetchJson(
+      `https://api.the-odds-api.com/v4/sports/?apiKey=${encodeURIComponent(key)}`
     );
+    const activeSoccer = sportsResult.data
+      .filter((x) => x.group === "Soccer" && !x.has_outrights)
+      .sort((a, b) => priorityScore(a) - priorityScore(b));
 
-    const byKey = new Map(activeSoccer.map((sport) => [sport.key, sport]));
-    const selected = [];
-
-    for (const key of priority) {
-      if (byKey.has(key)) selected.push(byKey.get(key));
-    }
-
-    for (const sport of activeSoccer) {
-      if (!selected.some((item) => item.key === sport.key)) selected.push(sport);
-      if (selected.length >= 16) break;
-    }
+    const priority = activeSoccer.filter((x) => priorityScore(x) < 999);
+    const others = activeSoccer.filter((x) => priorityScore(x) === 999);
+    const selected = [...priority, ...others].slice(0, 22);
 
     const events = [];
-    const errors = [];
-    let remaining = null;
-    let used = null;
+    const partialErrors = [];
+    let requestsRemaining = null;
+    let requestsUsed = null;
 
     for (const sport of selected) {
       try {
         const url =
           `https://api.the-odds-api.com/v4/sports/${sport.key}/odds/` +
-          `?apiKey=${encodeURIComponent(apiKey)}` +
+          `?apiKey=${encodeURIComponent(key)}` +
           `&regions=eu&markets=h2h,spreads&oddsFormat=decimal&dateFormat=iso`;
-
-        const { data, response } = await getJson(url);
-        remaining = response.headers.get("x-requests-remaining") || remaining;
-        used = response.headers.get("x-requests-used") || used;
-
-        for (const event of data) {
+        const result = await fetchJson(url);
+        requestsRemaining = result.response.headers.get("x-requests-remaining") || requestsRemaining;
+        requestsUsed = result.response.headers.get("x-requests-used") || requestsUsed;
+        for (const e of result.data) {
           events.push({
-            id: event.id,
-            sportKey: event.sport_key,
-            league: event.sport_title,
-            home: event.home_team,
-            away: event.away_team,
-            commenceTime: event.commence_time,
-            bookmakers: event.bookmakers || []
+            id: e.id,
+            sportKey: e.sport_key,
+            league: e.sport_title,
+            home: e.home_team,
+            away: e.away_team,
+            commenceTime: e.commence_time,
+            bookmakers: e.bookmakers || []
           });
         }
       } catch (error) {
-        errors.push({ sportKey: sport.key, message: error.message });
+        partialErrors.push({ sportKey: sport.key, message: error.message });
       }
     }
 
-    return json({
+    return respond({
       events,
-      queriedSports: selected.map((sport) => sport.key),
+      activeSoccerCount: activeSoccer.length,
+      queriedSports: selected.map((x) => ({ key: x.key, title: x.title })),
+      requestsRemaining,
+      requestsUsed,
+      partialErrors,
       source: "the-odds-api",
-      requestsRemaining: remaining,
-      requestsUsed: used,
-      partialErrors: errors,
       updatedAt: new Date().toISOString()
     });
   } catch (error) {
-    return json({ error: error.message, events: [] }, 502);
+    return respond({ error: error.message, events: [] }, 502);
   }
 }
