@@ -1,17 +1,1 @@
-export async function onRequestGet(context) {
-  return new Response(
-    JSON.stringify({
-      ok: true,
-      tokenConfigured: Boolean(
-        context.env.FOOTBALL_DATA_TOKEN
-      )
-    }),
-    {
-      status: 200,
-      headers: {
-        "Content-Type": "application/json; charset=utf-8",
-        "Cache-Control": "no-store"
-      }
-    }
-  );
-}
+export async function onRequestGet(c){return Response.json({ok:true,footballData:Boolean(c.env.FOOTBALL_DATA_TOKEN),odds:Boolean(c.env.THE_ODDS_API_KEY)})}
