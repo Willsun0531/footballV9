@@ -1,4 +1,4 @@
-const H={"content-type":"application/json;charset=utf-8","cache-control":"public,max-age=1800"};
+const H={"content-type":"application/json;charset=utf-8","cache-control":"public,max-age=21600, s-maxage=21600"};
 const J=(x,s=200)=>new Response(JSON.stringify(x),{status:s,headers:H});
 async function G(u){const r=await fetch(u),j=await r.json();if(!r.ok)throw Error(j?.message||`HTTP ${r.status}`);return{j,r}}
 const ALLOWED_SPORT_KEYS=new Set([

@@ -1,1 +1,1 @@
-export async function onRequestGet(c){return Response.json({ok:true,footballData:Boolean(c.env.FOOTBALL_DATA_TOKEN),odds:Boolean(c.env.THE_ODDS_API_KEY),context:Boolean(c.env.API_SPORTS_KEY),weather:true,version:'V14 Research Platform'})}
+export async function onRequestGet(c){return Response.json({ok:true,footballData:Boolean(c.env.FOOTBALL_DATA_TOKEN),odds:Boolean(c.env.THE_ODDS_API_KEY),context:Boolean(c.env.API_SPORTS_KEY),weather:true,version:'V14.1 Research Platform'})}
