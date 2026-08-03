@@ -12,11 +12,47 @@
 <body><main class="app">
 <header class="head"><div><h1>⚽ Football AI Pro</h1><div class="muted">Dynamic Elo + Time-decay GX + Dixon-Coles + No-vig Market Fusion + Calibration</div></div><span class="badge">V13 Advanced Fusion Research</span></header>
 <div class="notice">研究与模拟工具，不连接真实交易。概率、评分、价值差与冷门风险仅用于模型检验。</div>
-<nav class="tabs"><button class="tab on" data-page="today">近期赛事</button><button class="tab" data-page="mine">我的选择</button><button class="tab" data-page="cal">历史校准</button><button class="tab" data-page="settings">设置</button></nav>
-<section id="today" class="page on"><div class="box row"><button class="primary" onclick="refreshAll()">更新自定义日期预测</button><select id="sortF"><option value="score">综合推荐分</option><option value="risk">冷门风险</option><option value="edge">市场价值差</option><option value="time">开赛时间</option></select><input id="q" placeholder="搜索球队/联赛"></div><div id="stats" class="stats"></div><div id="list"></div></section>
+<nav class="tabs"><button class="tab on" data-page="today">近期赛事</button><button class="tab" data-page="mine">我的选择</button><button class="tab" data-page="cal">历史校准</button><button<button class="tab" data-page="review">
+2
+AI复盘
+3
+</button> class="tab" data-page="settings">设置</button></nav>
+<section id="today" class="page on"><div class="box row"><button class="primary" onclick="refreshAll()">更新自定义日期预测</button><select id="sortF"><option value="score">综合推荐分</option><option value="risk">冷门风险</option><option value="edge">市场价值差</option><option value="time">开赛时间</option></select><input id="q" placeholder="搜索球队/联赛"></div><div id="stats" class="stats"></div>
+2
+ 
+3
+<div class="box">
+4
+<h3>🏆 今日AI推荐榜</h3>
+5
+<div id="leaderboard"></div>
+6
+</div>
+7
+ 
+8
+<div id="list"></div></section>
 <section id="mine" class="page"><div id="mineStats" class="stats"></div><div class="box row"><label>组合投入 <input id="comboStake" type="number" value="100"></label><button class="primary" onclick="combo()">计算组合</button><button onclick="settle()">按赛果结算</button><span id="comboText"></span></div><div class="box table"><table id="choiceTable"></table></div></section>
 <section id="cal" class="page"><div id="calStats" class="stats"></div><div class="box table"><table id="calTable"></table></div></section>
-<section id="settings" class="page"><div class="box row"><label>默认投入 <input id="stake" type="number" value="100"></label><label>三项让球值 <input id="hcp" type="number" value="-1"></label><label>市场权重 <input id="marketW" type="number" step=".05" min="0" max=".6" value=".3"></label><label>显示天数 <input id="displayDays" type="number" min="1" max="14" value="2"></label><button class="primary" onclick="saveCfg()">保存</button></div><div class="box muted" id="log"></div></section>
+<section id="review" class="page">
+2
+ 
+3
+<div class="box">
+4
+<h3>AI自动复盘中心</h3>
+5
+ 
+6
+<div id="reviewStats"></div>
+7
+ 
+8
+</div>
+9
+ 
+10
+</section><section id="settings" class="page"><div class="box row"><label>默认投入 <input id="stake" type="number" value="100"></label><label>三项让球值 <input id="hcp" type="number" value="-1"></label><label>市场权重 <input id="marketW" type="number" step=".05" min="0" max=".6" value=".3"></label><label>显示天数 <input id="displayDays" type="number" min="1" max="14" value="2"></label><button class="primary" onclick="saveCfg()">保存</button></div><div class="box muted" id="log"></div></section>
 </main>
 <script>
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
@@ -165,7 +201,77 @@ function theoreticalKelly(a,g){const z=marketPriceSummary(g,a),i=['主胜','平�
 function advancedPanel(g,a){const ah=asianAnalysis(g,a),k=theoreticalKelly(a,g);return`<div class="box"><b>亚洲盘、公平盘口与研究型凯利</b><br>模型公平亚洲盘：主队 ${ah.fair>0?'+':''}${ah.fair}；市场即时盘：${ah.current?`${ah.current.point>0?'+':''}${ah.current.point} @ ${ah.current.avg.toFixed(2)}，${ah.current.books}家公司`:'暂无'}；欧亚一致性：${ah.consistent}；盘口变化：${ah.movement==null?'快照不足':`${ah.movement>0?'+':''}${ah.movement.toFixed(2)}球`}。<br>研究型凯利：${k.available?`理论值${(k.full*100).toFixed(1)}%，四分之一凯利诊断${(k.quarter*100).toFixed(1)}%，已强制封顶2%`:`不适用，${k.reason}`}。<br><span class="muted">凯利仅用于检验概率与赔率是否相容，不提供实际投入建议。亚洲盘公平线为模型估计值，不能替代真实盘口。</span></div>`}
 function currentSpread(g,o){const rr=rows(o).filter(x=>x.market==='spreads'&&Number.isFinite(x.point)&&Number.isFinite(x.price)&&norm(x.name)===norm(g.home.name));if(!rr.length)return null;const groups={};rr.forEach(x=>(groups[x.point]??=[]).push(x));const z=Object.entries(groups).sort((a,b)=>b[1].length-a[1].length)[0];return{point:+z[0],price:z[1].reduce((s,x)=>s+x.price,0)/z[1].length}}
 function contextHtml(g){const c=contextCache[String(g.id)];if(!c)return`<div class="box muted"><b>球员、教练、阵容、赛程、旅行、天气与场地</b><br>尚未加载核实数据。<button onclick="loadContext('${g.id}')">按需加载</button></div>`;if(c.error)return`<div class="box muted"><b>全维度比赛环境</b><br>${c.error}</div>`;return`<div class="box"><b>全维度比赛环境</b><br>伤停：主队${c.homeInjuries??0}人，客队${c.awayInjuries??0}人；球员影响代理：${finite(c.playerImpactDelta)>=0?'+':''}${(finite(c.playerImpactDelta)*100).toFixed(1)}%；首发：${c.lineupsConfirmed?'已确认':'未确认'}；阵型：${c.homeFormation||'暂无'} / ${c.awayFormation||'暂无'}。<br>教练：${c.homeCoach||'暂无'} / ${c.awayCoach||'暂无'}；近期换帅：${c.homeCoachRecent?'主队是':'主队否'} / ${c.awayCoachRecent?'客队是':'客队否'}。<br>休息天数：${c.homeRestDays??'—'} / ${c.awayRestDays??'—'}；客队旅行约${c.travelKm??'—'}公里；天气：${c.temperature==null?'暂无':`${c.temperature}℃，降水${c.precipitation??0}mm，风速${c.windSpeed??0}km/h`}；场地：${c.venue||'暂无'}。<br>上下文GX修正：${finite(c.totalContextDelta)>=0?'+':''}${(finite(c.totalContextDelta)*100).toFixed(1)}%，单场强制限制在±18%。<br><span class="muted">伤停修正是透明的代理值，不等同于真实球员身价或个人xG影响。未核实信息不进入模型。</span></div>`}
-async function loadContext(id){const z=view.find(x=>String(x.g.id)===String(id));if(!z)return;contextCache[String(id)]={error:'正在加载...'};save();render();try{const g=z.g,u=`/api/context?home=${encodeURIComponent(g.home.name)}&away=${encodeURIComponent(g.away.name)}&date=${encodeURIComponent(g.utcDate.slice(0,10))}`;const j=await fetch(u).then(r=>r.json());contextCache[String(id)]=j.error?{error:j.error}:j;save();render()}catch(e){contextCache[String(id)]={error:'上下文数据加载失败：'+e.message};save();render()}}
+async function loadContext(id){const z=view.find(x=>String(x.g.id)===String(id));if(!z)return;contextCache[String(id)]={error:'正在加载...'};save();function reviewYesterday(){
+2
+ 
+3
+const d = new Date();
+4
+ 
+5
+d.setDate(
+6
+d.getDate()-1
+7
+);
+8
+ 
+9
+const key =
+10
+d.toISOString()
+11
+.slice(0,10);
+12
+ 
+13
+const data =
+14
+JSON.parse(
+15
+localStorage.getItem(
+16
+`snapshot_${key}`
+17
+) || '[]'
+18
+);
+19
+ 
+20
+$('#reviewStats').innerHTML = `
+21
+ 
+22
+<div class="stats">
+23
+ 
+24
+<div class="stat">
+25
+ 
+26
+<b>${data.length}</b>
+27
+ 
+28
+<small>昨日预测数量</small>
+29
+ 
+30
+</div>
+31
+ 
+32
+</div>
+33
+ 
+34
+`;
+35
+ 
+36
+}render();try{const g=z.g,u=`/api/context?home=${encodeURIComponent(g.home.name)}&away=${encodeURIComponent(g.away.name)}&date=${encodeURIComponent(g.utcDate.slice(0,10))}`;const j=await fetch(u).then(r=>r.json());contextCache[String(id)]=j.error?{error:j.error}:j;save();render()}catch(e){contextCache[String(id)]={error:'上下文数据加载失败：'+e.message};save();render()}}
 function card(z){let g=z.g,a=z.a,r=aiRec(a),op=options(g,a),gs=[...new Set(op.map(x=>x[0]))],rc=a.risk>=70?'risk-high':a.risk>=45?'risk-mid':'risk-low';return `<article class="card"><div class="top"><span>${nm(g.competition.name)}</span><span>${new Date(g.utcDate).toLocaleString('zh-CN')}</span></div><div class="teams">${nm(g.home.name)} VS ${nm(g.away.name)}</div><div class="box direct"><div class="mh"><b>AI综合推荐：${r.result}</b><span><span class="pill ${scoreLevel(a.score).cls}">${a.score}分｜${scoreLevel(a.score).label}</span> <span class="pill ${rc}">冷门风险${a.risk}</span></span></div><div class="ai-grid"><div class="ai">保守方向<b>${r.conservative}</b></div><div class="ai">进球区间<b>${r.range}</b></div><div class="ai">大小球<b>${r.ou}</b></div><div class="ai">比分首选<b>${r.score}</b></div><div class="ai">双方进球<b>${r.btts}</b></div><div class="ai">让球${cfg.hcp}<b>${r.rq}</b></div><div class="ai">Elo支持<b>${a.elo.toFixed(0)}</b></div><div class="ai">数据完整度<b>${a.quality}%</b></div></div><div class="muted">比分Top5：${r.scores}</div></div>${contextHtml(g)}${oddsPanel(g,a)}${advancedPanel(g,a)}<div class="grid4"><div class="mini">融合主胜<b>${(a.blend[0]*100).toFixed(1)}%</b></div><div class="mini">融合平局<b>${(a.blend[1]*100).toFixed(1)}%</b></div><div class="mini">融合客胜<b>${(a.blend[2]*100).toFixed(1)}%</b></div><div class="mini">市场价值差<b>${(a.edge*100).toFixed(1)}%</b></div></div><details><summary>查看模型构成、分数含义与最终结论</summary>${modelExplanation(a)}</details><div class="choice"><select id="sel-${g.id}" onchange="document.getElementById('sp-${g.id}').value=this.options[this.selectedIndex].dataset.sp||''">${gs.map(gr=>`<optgroup label="${gr}">${op.filter(x=>x[0]===gr).map(x=>`<option value="${x[1]}" data-sp="${x[3]||''}">${x[2]}</option>`).join('')}</optgroup>`).join('')}</select><input id="sp-${g.id}" type="number" step=".01" placeholder="SP"><input id="st-${g.id}" type="number" value="${cfg.stake}"><button onclick="add('${g.id}')">加入我的选择</button></div></article>`}
 async function refreshAll(){try{$('#log').textContent='正在更新...';let[a,b]=await Promise.all([fetch('/api/app-data').then(r=>r.json()),fetch('/api/odds').then(r=>r.json())]);if(a.error)throw Error(a.error);data=a;odds=b.events||[];mergeOddsSchedule();data.upcoming.forEach(g=>{let o=oddsMatch(g),mk=market(g,o);if(o&&mk){(hist[o.id]??=[]).push({t:Date.now(),p:mk.p,spread:currentSpread(g,o)});hist[o.id]=hist[o.id].slice(-40)}});save();render();$('#log').textContent=`完成：赛事${data.upcoming.length}，历史${data.finished.length}，赔率${odds.length}。如果赔率仍为0，请打开/api/odds查看queriedSports、partialErrors与requestsRemaining。`}catch(e){$('#log').textContent='更新失败：'+e.message}}
 function localDateKey(value){const d=new Date(value);if(!Number.isFinite(d.getTime()))return'';return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Hong_Kong',year:'numeric',month:'2-digit',day:'2-digit'}).format(d)}
@@ -176,7 +282,84 @@ function add(id){let z=view.find(x=>String(x.g.id)===String(id)),sel=$('#sel-'+i
 function settle(){let n=0;for(let c of choices.filter(x=>x.status==='pending')){let r=data.finished.find(x=>String(x.id)===c.matchId);if(!r)continue;let h=+r.score.home,a=+r.score.away,p=c.market.split('|'),actual=h>a?0:h===a?1:2,hit=false;if(p[0]==='h2h')hit=+p[1]===actual;if(p[0]==='rq')hit=+p[1]===(h+c.hcp>a?0:h+c.hcp===a?1:2);if(p[0]==='score')hit=h===+p[1]&&a===+p[2];if(p[0]==='goals')hit=+p[1]>=7?h+a>=7:h+a===+p[1];if(p[0]==='ou')hit=p[1]==='over'?h+a>+p[2]:h+a<+p[2];if(p[0]==='btts')hit=(p[1]==='yes')===Boolean(h&&a);if(p[0]==='spread'){let isHome=norm(p[1])===norm(r.home.name),adjusted=(isHome?h:a)+finite(p[2]),opponent=isHome?a:h;hit=adjusted>opponent;}Object.assign(c,{status:'settled',actual,hit,profit:hit?c.stake*(c.sp-1):-c.stake});n++}save();render();alert('结算'+n+'项')}
 function perf(a){let z=a.filter(x=>x.status==='settled'),inv=z.reduce((s,x)=>s+x.stake,0),profit=z.reduce((s,x)=>s+x.profit,0);return{n:z.length,profit,roi:inv?profit/inv:0}}
 function combo(){let a=choices.filter(x=>x.checked&&x.status==='pending'),st=+$('#comboStake').value||0,sp=a.reduce((s,x)=>s*x.sp,1);$('#comboText').textContent=a.length?`组合SP ${sp.toFixed(3)} · 返还 ${(sp*st).toFixed(2)} · 盈利 ${(sp*st-st).toFixed(2)}`:'请勾选'}
-function render(){view=filtered();$('#stats').innerHTML=[['赛事',view.length],['高分',view.filter(x=>x.a.score>=78).length],['高风险',view.filter(x=>x.a.risk>=70).length],['赔率匹配',view.filter(x=>x.a.mk).length]].map(x=>`<div class="stat"><b>${x[1]}</b><small>${x[0]}</small></div>`).join('');$('#list').innerHTML=view.map(card).join('')||'<div class="empty">暂无赛事</div>';let p=perf(choices);$('#mineStats').innerHTML=[['待结算',choices.filter(x=>x.status==='pending').length],['已结算',p.n],['盈亏',p.profit.toFixed(2)],['ROI',(p.roi*100).toFixed(1)+'%']].map(x=>`<div class="stat"><b>${x[1]}</b><small>${x[0]}</small></div>`).join('');$('#choiceTable').innerHTML='<tr><th>组合</th><th>比赛</th><th>选择</th><th>SP</th><th>投入</th><th>状态</th><th>盈亏</th></tr>'+choices.map(c=>`<tr><td><input type="checkbox" ${c.checked?'checked':''} onchange="choices.find(x=>x.id==='${c.id}').checked=this.checked;save()"></td><td>${nm(c.home)} VS ${nm(c.away)}</td><td>${c.label}</td><td>${c.sp}</td><td>${c.stake}</td><td>${c.status}</td><td>${c.status==='settled'?c.profit.toFixed(2):'—'}</td></tr>`).join('');renderCal()}
+function render(){view=filtered();$('#stats').innerHTML=const top10 =
+2
+[...view]
+3
+.sort((a,b)=>b.a.score-a.a.score)
+4
+.slice(0,10);
+5
+ 
+6
+$('#leaderboard').innerHTML =
+7
+top10.map((m,i)=>`
+8
+<div style="
+9
+padding:8px;
+10
+margin-bottom:6px;
+11
+background:#0c1222;
+12
+border:1px solid #303b58;
+13
+border-radius:10px">
+14
+ 
+15
+<b>#${i+1}</b>
+16
+ 
+17
+&nbsp;
+18
+ 
+19
+${nm(m.g.home.name)}
+20
+VS
+21
+${nm(m.g.away.name)}
+22
+ 
+23
+<br>
+24
+ 
+25
+AI推荐：
+26
+<b>${m.a.primary}</b>
+27
+ 
+28
+&nbsp;&nbsp;
+29
+ 
+30
+推荐分：
+31
+<b>${m.a.score}</b>
+32
+ 
+33
+&nbsp;&nbsp;
+34
+ 
+35
+冷门风险：
+36
+${m.a.risk}
+37
+ 
+38
+</div>
+39
+`).join('');
+40[['赛事',view.length],['高分',view.filter(x=>x.a.score>=78).length],['高风险',view.filter(x=>x.a.risk>=70).length],['赔率匹配',view.filter(x=>x.a.mk).length]].map(x=>`<div class="stat"><b>${x[1]}</b><small>${x[0]}</small></div>`).join('');$('#list').innerHTML=view.map(card).join('')||'<div class="empty">暂无赛事</div>';let p=perf(choices);$('#mineStats').innerHTML=[['待结算',choices.filter(x=>x.status==='pending').length],['已结算',p.n],['盈亏',p.profit.toFixed(2)],['ROI',(p.roi*100).toFixed(1)+'%']].map(x=>`<div class="stat"><b>${x[1]}</b><small>${x[0]}</small></div>`).join('');$('#choiceTable').innerHTML='<tr><th>组合</th><th>比赛</th><th>选择</th><th>SP</th><th>投入</th><th>状态</th><th>盈亏</th></tr>'+choices.map(c=>`<tr><td><input type="checkbox" ${c.checked?'checked':''} onchange="choices.find(x=>x.id==='${c.id}').checked=this.checked;save()"></td><td>${nm(c.home)} VS ${nm(c.away)}</td><td>${c.label}</td><td>${c.sp}</td><td>${c.stake}</td><td>${c.status}</td><td>${c.status==='settled'?c.profit.toFixed(2):'—'}</td></tr>`).join('');renderCal()}
 function renderCal(){let c=calibration();$('#calStats').innerHTML=[['样本',c.n],['Brier',c.brier==null?'—':c.brier.toFixed(3)],['Log Loss',c.ll==null?'—':c.ll.toFixed(3)],['状态',c.n>=30?'已启用':'观察中']].map(x=>`<div class="stat"><b>${x[1]}</b><small>${x[0]}</small></div>`).join('');$('#calTable').innerHTML='<tr><th>区间</th><th>样本</th><th>预测均值</th><th>实际命中</th></tr>'+Object.entries(c.bins).map(([k,v])=>`<tr><td>${k}-${+k+9}%</td><td>${v.length}</td><td>${(v.reduce((s,x)=>s+Math.max(...x.probs),0)/v.length*100).toFixed(1)}%</td><td>${(v.filter(x=>x.hit).length/v.length*100).toFixed(1)}%</td></tr>`).join('')}
 function saveCfg(){cfg={stake:+$('#stake').value||100,hcp:+$('#hcp').value,marketW:clamp(+$('#marketW').value,0,.6),displayDays:clamp(+$('#displayDays').value,1,14)};save();render()}
 $$('.tab').forEach(x=>x.onclick=()=>{$$('.tab,.page').forEach(y=>y.classList.remove('on'));x.classList.add('on');$('#'+x.dataset.page).classList.add('on')});['q','sortF'].forEach(x=>$('#'+x).oninput=render);$('#stake').value=cfg.stake;$('#hcp').value=cfg.hcp;$('#marketW').value=cfg.marketW;$('#displayDays').value=cfg.displayDays||2;render();
