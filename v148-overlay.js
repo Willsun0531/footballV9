@@ -1,84 +1,11 @@
-/* V14.8 overlay: load after the main V14.7 script. */
-(() => {
-  const nativeFetch = window.fetch.bind(window);
-  const originalPredict = window.predict;
-
-  window.fetch = async function(input, init) {
-    const response = await nativeFetch(input, init);
-    const url = typeof input === "string" ? input : input?.url || "";
-    if (!url.includes("/api/fixtures") || !response.ok) return response;
-
-    try {
-      const payload = await response.clone().json();
-      const fixtures = Array.isArray(payload.fixtures)
-        ? payload.fixtures
-        : [...(payload.upcoming || []), ...(payload.finished || [])];
-      const ids = fixtures
-        .map(x => String(x.id || ""))
-        .filter(x => x.startsWith("apisports-"))
-        .slice(0, 12);
-      if (!ids.length) return response;
-
-      const predictionResponse = await nativeFetch(
-        `/api/predictions?ids=${encodeURIComponent(ids.join(","))}`
-      );
-      if (!predictionResponse.ok) return response;
-      const predictionPayload = await predictionResponse.json();
-      const map = predictionPayload.predictions || {};
-      for (const fixture of fixtures) {
-        if (map[fixture.id]) fixture.apiPrediction = map[fixture.id];
-      }
-      return new Response(JSON.stringify(payload), {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers
-      });
-    } catch (error) {
-      console.warn("V14.8 prediction enrichment skipped:", error);
-      return response;
-    }
-  };
-
-  if (typeof originalPredict === "function") {
-    window.predict = function(g, F) {
-      const result = originalPredict(g, F);
-      const api = g?.apiPrediction;
-      const p = api?.probabilities;
-      if (!result?.insufficient || !p) return result;
-      const values = [p.home, p.draw, p.away];
-      if (!values.every(Number.isFinite)) return result;
-
-      const total = values.reduce((a, b) => a + b, 0);
-      if (!(total > 0)) return result;
-      result.p = values.map(x => x / total);
-      result.blend = result.p.slice();
-      const order = [0, 1, 2].sort((a, b) => result.blend[b] - result.blend[a]);
-      result.primary = ["主胜", "平局", "客胜"][order[0]];
-
-      if (Number.isFinite(api.expectedGoals?.home)) result.x = api.expectedGoals.home;
-      if (Number.isFinite(api.expectedGoals?.away)) result.y = api.expectedGoals.away;
-
-      if (typeof window.mat === "function" && Number.isFinite(result.x) && Number.isFinite(result.y)) {
-        const matrix = window.mat(result.x, result.y);
-        result.tops = [...matrix].sort((a, b) => b[0] - a[0]).slice(0, 5);
-        const totals = Array(15).fill(0);
-        let btts = 0;
-        matrix.forEach(([q, h, a]) => {
-          totals[h + a] += q;
-          if (h && a) btts += q;
-        });
-        const under = totals.slice(0, 3).reduce((a, b) => a + b, 0);
-        result.ou = under >= 0.5 ? "小2.5" : "大2.5";
-        result.btts = btts >= 0.5 ? "是" : "否";
-      }
-
-      result.reason = "API-Sports个性化基础预测，缺少本地历史或市场验证";
-      result.apiPrediction = api;
-      result.insufficient = true;
-      result.score = null;
-      result.risk = null;
-      result.status = "C";
-      return result;
-    };
-  }
+/* Football AI Pro V14.9: positive GX + API-Sports odds */
+(()=>{
+const nativeFetch=window.fetch.bind(window),originalPredict=window.predict,originalCard=window.card;
+function poisson(k,l){let f=1;for(let i=2;i<=k;i++)f*=i;return Math.exp(-l)*l**k/f}
+function probs(x,y){let h=0,d=0,a=0,s=0;for(let i=0;i<=8;i++)for(let j=0;j<=8;j++){const q=poisson(i,x)*poisson(j,y);s+=q;i>j?h+=q:i===j?d+=q:a+=q}return[h/s,d/s,a/s]}
+function fitGX(target){let best={err:1e9,x:1.35,y:1.17};for(let x=.2;x<=3.8;x+=.05)for(let y=.2;y<=3.8;y+=.05){const p=probs(x,y),e=p.reduce((s,v,i)=>s+(v-target[i])**2,0);if(e<best.err)best={err:e,x,y}}return{x:+best.x.toFixed(2),y:+best.y.toFixed(2)}}
+window.fetch=async(input,init)=>{const r=await nativeFetch(input,init),url=typeof input==='string'?input:input?.url||'';if(!url.includes('/api/fixtures')||!r.ok)return r;try{const payload=await r.clone().json(),fixtures=Array.isArray(payload.fixtures)?payload.fixtures:[...(payload.upcoming||[]),...(payload.finished||[])],ids=fixtures.map(x=>String(x.id||'')).filter(x=>x.startsWith('apisports-')).slice(0,10);if(!ids.length)return r;const pr=await nativeFetch(`/api/predictions?ids=${encodeURIComponent(ids.join(','))}`);if(!pr.ok)return r;const map=(await pr.json()).predictions||{};fixtures.forEach(f=>{if(map[f.id])f.apiPrediction=map[f.id]});return new Response(JSON.stringify(payload),{status:r.status,statusText:r.statusText,headers:r.headers})}catch(e){console.warn('V14.9 enrichment skipped',e);return r}};
+if(typeof originalPredict==='function')window.predict=function(g,F){const z=originalPredict(g,F),api=g?.apiPrediction;if(!api)return z;const ap=api.probabilities,mp=api.odds?.h2h?.probabilities;let p=Array.isArray(ap)?ap:null;if(!p&&ap)p=[ap.home,ap.draw,ap.away];if((!p||!p.every(Number.isFinite))&&mp?.every(Number.isFinite))p=mp;if(!p?.every(Number.isFinite))return z;const sum=p.reduce((a,b)=>a+b,0);p=p.map(v=>v/sum);if(mp?.every(Number.isFinite))p=p.map((v,i)=>v*.7+mp[i]*.3);const gx=(Number.isFinite(api.expectedGoals?.home)&&Number.isFinite(api.expectedGoals?.away))?api.expectedGoals:fitGX(p);z.x=Math.max(.1,gx.home??gx.x);z.y=Math.max(.1,gx.away??gx.y);z.p=p;z.blend=p.slice();const order=[0,1,2].sort((a,b)=>p[b]-p[a]);z.primary=['主胜','平局','客胜'][order[0]];if(typeof window.mat==='function'){const M=window.mat(z.x,z.y),tot=Array(15).fill(0);let bt=0;M.forEach(([q,h,a])=>{tot[h+a]+=q;if(h&&a)bt+=q});z.tops=[...M].sort((a,b)=>b[0]-a[0]).slice(0,5);z.ou=tot.slice(0,3).reduce((a,b)=>a+b,0)>=.5?'小2.5':'大2.5';z.btts=bt>=.5?'是':'否'}if(api.odds?.h2h){z.mk={avg:api.odds.h2h.avg,p:api.odds.h2h.probabilities,books:api.odds.h2h.books,source:'api-sports'}}z.reason='API-Sports个性化预测'+(z.mk?' + 实际欧赔融合':'，暂缺市场赔率');z.insufficient=true;z.score=null;z.risk=null;z.status='C';z.apiPrediction=api;return z};
+if(typeof originalCard==='function')window.card=function(z){let html=originalCard(z),api=z?.a?.apiPrediction,od=api?.odds;if(!od)return html;let extra='';if(od.h2h)extra+=`<div class="box"><b>赛前胜平负赔率</b><div class="small">主胜 ${od.h2h.avg[0].toFixed(2)} · 平局 ${od.h2h.avg[1].toFixed(2)} · 客胜 ${od.h2h.avg[2].toFixed(2)} · ${od.h2h.books}家公司</div></div>`;if(od.handicaps?.length)extra+=`<div class="box"><b>亚洲让球盘</b><div class="small">${od.handicaps.slice(0,6).map(x=>`${x.label}${x.handicap!=null?' '+x.handicap:''} @${x.odd} · ${x.book}`).join(' ｜ ')}</div></div>`;return html.replace('<div class="choice">',extra+'<div class="choice">')};
+window.addEventListener('DOMContentLoaded',()=>{const b=document.querySelector('.badge');if(b)b.textContent='V14.9 GX & Odds Fix'});
 })();
