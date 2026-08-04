@@ -90,29 +90,34 @@ function allowedCompetition(item) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase();
 
+  // Exclude women, youth, reserve and age-group competitions before
+  // accepting generic names such as "Champions League".
+  const blockedTerms = [
+    "women",
+    "woman",
+    "female",
+    "feminine",
+    "u17",
+    "u18",
+    "u19",
+    "u20",
+    "u21",
+    "u23",
+    "youth",
+    "junior",
+    "reserve"
+  ];
+
+  if (blockedTerms.some(term => league.includes(term))) {
+    return false;
+  }
+
+  // International men's competitions
   if (
-2
-league.includes("women") ||
-3
-league.includes("female") ||
-4
-league.includes("u19") ||
-5
-league.includes("u21") ||
-6
-league.includes("youth")
-7
-) {
-8
-return false;
-9
-}
-  // International competitions
-  if (
-    league.includes("uefa champions league") ||
-    league.includes("champions league") ||
-    league.includes("uefa europa league") ||
-    league.includes("europa league")
+    league === "uefa champions league" ||
+    league === "champions league" ||
+    league === "uefa europa league" ||
+    league === "europa league"
   ) {
     return true;
   }
