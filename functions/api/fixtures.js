@@ -10,8 +10,27 @@ function jsonResponse(data, status = 200) {
   });
 }
 
-function dateKey(date) {
-  return date.toISOString().slice(0, 10);
+function hongKongDateKey(date) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Hong_Kong",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(
+    parts.map(part => [part.type, part.value])
+  );
+
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
+function addDays(date, days) {
+  return new Date(date.getTime() + days * 86400000);
+}
+
+function isFinished(shortStatus) {
+  return ["FT", "AET", "PEN"].includes(shortStatus);
 }
 
 function normalizeFixture(item) {
@@ -22,19 +41,11 @@ function normalizeFixture(item) {
 
   return {
     id: `apisports-${fixture.id}`,
-
     externalId: fixture.id,
-
     utcDate: fixture.date,
-
-    status:
-      fixture.status?.short === "FT"
-        ? "FINISHED"
-        : fixture.status?.short === "AET"
-        ? "FINISHED"
-        : fixture.status?.short === "PEN"
-        ? "FINISHED"
-        : "SCHEDULED",
+    status: isFinished(fixture.status?.short)
+      ? "FINISHED"
+      : "SCHEDULED",
 
     competition: {
       code: `APISPORTS-${league.id}`,
@@ -55,15 +66,8 @@ function normalizeFixture(item) {
     },
 
     score: {
-      home:
-        Number.isFinite(goals.home)
-          ? goals.home
-          : null,
-
-      away:
-        Number.isFinite(goals.away)
-          ? goals.away
-          : null
+      home: Number.isFinite(goals.home) ? goals.home : null,
+      away: Number.isFinite(goals.away) ? goals.away : null
     },
 
     venue: {
@@ -76,70 +80,61 @@ function normalizeFixture(item) {
 }
 
 function allowedCompetition(item) {
-  const leagueName = String(
-    item.league?.name || ""
-  ).toLowerCase();
+  const league = String(item.league?.name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 
-  const country = String(
-    item.league?.country || ""
-  ).toLowerCase();
+  const country = String(item.league?.country || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 
-  const allowedNames = [
-    "uefa champions league",
-    "champions league",
-    "uefa europa league",
-    "europa league",
-
-    "premier league",
-    "championship",
-    "la liga",
-    "bundesliga",
-    "serie a",
-    "ligue 1",
-
-    "eredivisie",
-    "primeira liga",
-
-    "major league soccer",
-    "mls",
-
-    "serie a",
-    "eliteserien",
-    "allsvenskan",
-
-    "j1 league",
-    "j-league",
-    "k league 1",
-    "a-league"
-  ];
-
-  const blockedCombinations = [
-    ["russia", "premier league"],
-    ["austria", "bundesliga"],
-    ["brazil", "serie b"],
-    ["france", "ligue 2"],
-    ["spain", "segunda"]
-  ];
-
-  const isBlocked = blockedCombinations.some(
-    ([blockedCountry, blockedLeague]) => {
-      return (
-        country.includes(blockedCountry) &&
-        leagueName.includes(blockedLeague)
-      );
-    }
-  );
-
-  if (isBlocked) {
-    return false;
+  // International competitions
+  if (
+    league.includes("uefa champions league") ||
+    league.includes("champions league") ||
+    league.includes("uefa europa league") ||
+    league.includes("europa league")
+  ) {
+    return true;
   }
 
-  return allowedNames.some(name => {
-    return leagueName.includes(name);
-  });
+  // Exact country + competition rules avoid Russian Premier League,
+  // Austrian Bundesliga, Serie B, Ligue 2 and Segunda Division.
+  const rules = [
+    ["england", ["premier league", "championship"]],
+    ["spain", ["la liga"]],
+    ["germany", ["bundesliga"]],
+    ["italy", ["serie a"]],
+    ["france", ["ligue 1"]],
+    ["netherlands", ["eredivisie"]],
+    ["portugal", ["primeira liga"]],
+    ["usa", ["major league soccer"]],
+    ["united states", ["major league soccer"]],
+    ["brazil", ["serie a"]],
+    ["norway", ["eliteserien"]],
+    ["sweden", ["allsvenskan"]],
+    ["japan", ["j1 league", "j-league"]],
+    ["south-korea", ["k league 1"]],
+    ["south korea", ["k league 1"]],
+    ["australia", ["a-league"]]
+  ];
+
+  return rules.some(([wantedCountry, names]) =>
+    country.includes(wantedCountry) &&
+    names.some(name => league.includes(name))
+  );
 }
 
-async function apiSportsRequest(apiKey, url) {
+async function fetchDate(apiKey, date) {
+  // API-Sports rejects from/to without league + season.
+  // The date endpoint works for a daily cross-league fixture list.
+  const url =
+    "https://v3.football.api-sports.io/fixtures" +
+    `?date=${encodeURIComponent(date)}` +
+    "&timezone=Asia%2FHong_Kong";
+
   const response = await fetch(url, {
     method: "GET",
     headers: {
@@ -151,26 +146,17 @@ async function apiSportsRequest(apiKey, url) {
 
   if (!response.ok) {
     throw new Error(
-      data.message ||
-      `API-Sports HTTP ${response.status}`
+      data.message || `API-Sports HTTP ${response.status}`
     );
   }
 
-  if (
-    data.errors &&
-    Object.keys(data.errors).length > 0
-  ) {
-    throw new Error(
-      JSON.stringify(data.errors)
-    );
+  if (data.errors && Object.keys(data.errors).length > 0) {
+    throw new Error(JSON.stringify(data.errors));
   }
 
   return {
-    data,
-    remaining:
-      response.headers.get(
-        "x-ratelimit-requests-remaining"
-      )
+    fixtures: Array.isArray(data.response) ? data.response : [],
+    remaining: response.headers.get("x-ratelimit-requests-remaining")
   };
 }
 
@@ -179,86 +165,67 @@ export async function onRequestGet(context) {
 
   if (!apiKey) {
     return jsonResponse(
-      {
-        error: "API_SPORTS_KEY未配置",
-        fixtures: []
-      },
+      { error: "API_SPORTS_KEY未配置", fixtures: [] },
       500
     );
   }
 
   try {
-    const requestUrl = new URL(
-      context.request.url
-    );
-
-    const rawDays = Number(
+    const requestUrl = new URL(context.request.url);
+    const requestedDays = Number(
       requestUrl.searchParams.get("days") || 7
     );
 
-    const days = Math.min(
-      14,
-      Math.max(1, rawDays)
-    );
-
+    // Each date uses one API-Sports request. Cap at 14 to protect quota.
+    const days = Math.min(14, Math.max(1, requestedDays));
     const now = new Date();
-
-    const future = new Date(
-      now.getTime() +
-      days * 24 * 60 * 60 * 1000
+    const dates = Array.from({ length: days }, (_, index) =>
+      hongKongDateKey(addDays(now, index))
     );
 
-    const from = dateKey(now);
-    const to = dateKey(future);
+    const fixtures = [];
+    const errors = [];
+    let rawTotal = 0;
+    let requestsRemaining = null;
 
-    const url =
-      "https://v3.football.api-sports.io/fixtures" +
-      `?from=${encodeURIComponent(from)}` +
-      `&to=${encodeURIComponent(to)}` +
-      "&timezone=Asia%2FHong_Kong";
+    // Sequential calls are gentler on the per-minute rate limit.
+    for (const date of dates) {
+      try {
+        const result = await fetchDate(apiKey, date);
+        rawTotal += result.fixtures.length;
+        requestsRemaining = result.remaining || requestsRemaining;
+        fixtures.push(
+          ...result.fixtures
+            .filter(allowedCompetition)
+            .map(normalizeFixture)
+        );
+      } catch (error) {
+        errors.push({ date, message: error.message });
+      }
+    }
 
-    const result = await apiSportsRequest(
-      apiKey,
-      url
+    // Deduplicate by API-Sports fixture id.
+    const unique = Array.from(
+      new Map(fixtures.map(item => [item.id, item])).values()
+    ).sort(
+      (a, b) => new Date(a.utcDate) - new Date(b.utcDate)
     );
-
-    const rawFixtures =
-      result.data.response || [];
-
-    const fixtures = rawFixtures
-      .filter(allowedCompetition)
-      .map(normalizeFixture)
-      .filter(item => {
-        return (
-          item.home.name &&
-          item.away.name &&
-          item.utcDate
-        );
-      })
-      .sort((a, b) => {
-        return (
-          new Date(a.utcDate) -
-          new Date(b.utcDate)
-        );
-      });
 
     return jsonResponse({
-      fixtures,
-      total: fixtures.length,
-      rawTotal: rawFixtures.length,
-      from,
-      to,
-      requestsRemaining: result.remaining,
+      fixtures: unique,
+      total: unique.length,
+      rawTotal,
+      dates,
+      requestsUsedByThisCall: dates.length,
+      requestsRemaining,
+      partialErrors: errors,
       source: "api-sports",
       updatedAt: new Date().toISOString()
     });
-
   } catch (error) {
     return jsonResponse(
       {
-        error:
-          error.message ||
-          "API-Sports fixtures request failed",
+        error: error.message || "API-Sports fixtures request failed",
         fixtures: []
       },
       502
