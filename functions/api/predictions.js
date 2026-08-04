@@ -22,7 +22,7 @@ async function apiGet(key, path) {
     `https://v3.football.api-sports.io${path}`,
     { headers: { "x-apisports-key": key } }
   );
-  const body = await response.json();
+  const text = await response.text(); let body; try { body = JSON.parse(text); } catch { throw new Error(`Upstream non-JSON HTTP ${response.status}: ${text.slice(0,120)}`); }
   if (!response.ok) throw new Error(body?.message || `HTTP ${response.status}`);
   if (body?.errors && Object.keys(body.errors).length) {
     throw new Error(JSON.stringify(body.errors));
@@ -208,7 +208,7 @@ export async function onRequestGet(context) {
     requestsRemaining,
     partialErrors,
     source: "api-sports",
-    version: "V15 Prediction Fallback Fix",
+    version: "V15.1 Resilient Data",
     updatedAt: new Date().toISOString()
   });
 }
