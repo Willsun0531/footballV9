@@ -1,158 +1,18 @@
 const UPSTREAM = "https://football-predict.pages.dev/api/daily-jingcai";
-const HEADERS = {
-  "content-type": "application/json; charset=utf-8",
-  "cache-control": "public, max-age=300, s-maxage=300",
-  "access-control-allow-origin": "*"
-};
-
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), { status, headers: HEADERS });
-}
-
-function n(value, fallback = 0) {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function getProbabilities(match) {
-  const values = [
-    n(match.homeWinProb ?? match.spf?.homeWinProb),
-    n(match.drawProb ?? match.spf?.drawProb),
-    n(match.awayWinProb ?? match.spf?.awayWinProb)
-  ];
-  const total = values.reduce((sum, value) => sum + value, 0);
-  return total > 0 ? values.map(value => value / total * 100) : [0, 0, 0];
-}
-
-function getSampleCount(match) {
-  const candidates = [
-    match.sampleCount,
-    match.historySample,
-    match.history_samples,
-    match.dataQuality?.sampleCount,
-    match.dataQuality?.historySample,
-    match.dataQuality?.samples,
-    match.home_matches_count && match.away_matches_count
-      ? n(match.home_matches_count) + n(match.away_matches_count)
-      : null
-  ];
-  for (const value of candidates) {
-    if (Number.isFinite(Number(value))) return Number(value);
-  }
-  return 0;
-}
-
-function recalibrateGrade(match) {
-  const probabilities = getProbabilities(match);
-  const ordered = [...probabilities].sort((a, b) => b - a);
-  const lead = ordered[0] - ordered[1];
-  const officialSp = [match.sp_win, match.sp_draw, match.sp_lose]
-    .every(value => n(value) > 1);
-  const sampleCount = getSampleCount(match);
-  const reliability = n(match.dataQuality?.reliability ?? match.reliability);
-  const originalConfidence = n(match.confidence);
-  const hasPersonalizedModel = probabilities.some(value => value > 0) &&
-    !(Math.abs(probabilities[0] - 39.9) < 0.3 &&
-      Math.abs(probabilities[1] - 28.8) < 0.3 &&
-      Math.abs(probabilities[2] - 31.3) < 0.3);
-
-  const quality = Math.min(100,
-    sampleCount * 4 +
-    (officialSp ? 25 : 0) +
-    (hasPersonalizedModel ? 15 : 0)
-  );
-
-  let tier = "C";
-  let reason = "数据条件未达到B级门槛";
-
-  if (
-    officialSp &&
-    hasPersonalizedModel &&
-    sampleCount >= 6 &&
-    reliability >= 45 &&
-    quality >= 55 &&
-    lead >= 10 &&
-    originalConfidence >= 70
-  ) {
-    tier = "A";
-    reason = "历史样本、官方SP、模型方向和可靠性均达到A级门槛";
-  } else if (
-    officialSp &&
-    hasPersonalizedModel &&
-    sampleCount >= 3 &&
-    reliability >= 30 &&
-    quality >= 35 &&
-    lead >= 6 &&
-    originalConfidence >= 55
-  ) {
-    tier = "B";
-    reason = "具备官方SP和个性化方向，但样本或可靠性尚未达到A级";
-  } else if (!officialSp) {
-    reason = "缺少完整体彩胜平负SP";
-  } else if (!hasPersonalizedModel) {
-    reason = "仍在使用通用基础分布，不能进入A/B级";
-  } else if (sampleCount < 3) {
-    reason = `历史样本不足（${sampleCount}场）`;
-  } else if (lead < 6) {
-    reason = `首选领先差不足（${lead.toFixed(1)}pp）`;
-  } else if (reliability < 30) {
-    reason = `数据可靠性不足（${reliability.toFixed(0)}%）`;
-  }
-
-  return {
-    ...match,
-    spf: { ...(match.spf || {}), tier },
-    calibratedTier: tier,
-    grading: {
-      version: "V16-P8.1",
-      tier,
-      reason,
-      officialSp,
-      personalizedModel: hasPersonalizedModel,
-      sampleCount,
-      reliability,
-      quality: Math.round(quality),
-      lead: Number(lead.toFixed(1)),
-      originalConfidence
-    }
-  };
-}
-
-export async function onRequestGet(context) {
-  const url = new URL(context.request.url);
-  const query = new URLSearchParams();
-  for (const [key, value] of url.searchParams) {
-    if (key !== "x") query.set(key, value);
-  }
-  if (!query.has("days")) query.set("days", "4");
-
-  try {
-    const response = await fetch(`${UPSTREAM}?${query}`, {
-      headers: { accept: "application/json", "user-agent": "Mozilla/5.0" }
-    });
-    const text = await response.text();
-    const payload = JSON.parse(text);
-    if (!response.ok || payload.success === false) {
-      return json({ success: false, error: payload.error || `upstream ${response.status}`, matches: [] }, 502);
-    }
-    const rawMatches = Array.isArray(payload.matches) ? payload.matches : [];
-    const matches = rawMatches.map(recalibrateGrade);
-    const counts = matches.reduce((acc, match) => {
-      const tier = match.calibratedTier || "C";
-      acc[tier] += 1;
-      return acc;
-    }, { A: 0, B: 0, C: 0 });
-
-    return json({
-      ...payload,
-      success: true,
-      matches,
-      total: matches.length,
-      gradeCounts: counts,
-      gradingVersion: "V16-P8.1 strict grading",
-      gradingNotice: "上游旧tier已被覆盖，A/B/C由样本、官方SP、个性化模型、可靠性和方向领先差重新计算。"
-    });
-  } catch (error) {
-    return json({ success: false, error: error.message, matches: [] }, 502);
-  }
-}
+const HEADERS = {"content-type":"application/json; charset=utf-8","cache-control":"public, max-age=300, s-maxage=300","access-control-allow-origin":"*"};
+const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers:HEADERS});
+const n=(v,d=0)=>Number.isFinite(Number(v))?Number(v):d;
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function normalize(a){const s=a.reduce((x,y)=>x+y,0);return s>0?a.map(x=>x/s):null}
+function oldProb(m){return normalize([n(m.homeWinProb??m.spf?.homeWinProb),n(m.drawProb??m.spf?.drawProb),n(m.awayWinProb??m.spf?.awayWinProb)])}
+function marketProb(m){const a=[n(m.sp_win),n(m.sp_draw),n(m.sp_lose)];return a.every(x=>x>1)?normalize(a.map(x=>1/x)):null}
+function eloProb(m){const eh=n(m.home_elo??m.homeElo??m.elo?.home,NaN),ea=n(m.away_elo??m.awayElo??m.elo?.away,NaN);if(!Number.isFinite(eh)||!Number.isFinite(ea))return null;const home=1/(1+Math.pow(10,-((eh+65)-ea)/400));const draw=clamp(.30-Math.abs(home-.5)*.22,.17,.30);return normalize([home*(1-draw),draw,(1-home)*(1-draw)])}
+function factorial(k){let r=1;for(let i=2;i<=k;i++)r*=i;return r}
+function poissonP(k,l){return Math.exp(-l)*Math.pow(l,k)/factorial(k)}
+function poissonMatrix(lh,la,dc=false){if(!(lh>0&&la>0))return null;let h=0,d=0,a=0,total=0,scores=[];for(let i=0;i<=8;i++)for(let j=0;j<=8;j++){let p=poissonP(i,lh)*poissonP(j,la);if(dc){const rho=-.08;if(i===0&&j===0)p*=1-lh*la*rho;else if(i===0&&j===1)p*=1+lh*rho;else if(i===1&&j===0)p*=1+la*rho;else if(i===1&&j===1)p*=1-rho}p=Math.max(0,p);total+=p;if(i>j)h+=p;else if(i===j)d+=p;else a+=p;scores.push({score:`${i}:${j}`,prob:p})}const probs=normalize([h,d,a]);scores.sort((x,y)=>y.prob-x.prob);return{probabilities:probs,scores:scores.slice(0,8).map(x=>({score:x.score,prob:x.prob/total*100}))}}
+function sampleCount(m){for(const v of [m.sampleCount,m.historySample,m.history_samples,m.dataQuality?.sampleCount,m.dataQuality?.historySample,m.dataQuality?.samples])if(Number.isFinite(Number(v)))return Number(v);return 0}
+function argmax(a){return a.indexOf(Math.max(...a))}
+function buildModels(m){const old=oldProb(m),market=marketProb(m),elo=eloProb(m),lh=n(m.score?.homeLambda??m.homeLambda,NaN),la=n(m.score?.awayLambda??m.awayLambda,NaN),poisson=poissonMatrix(lh,la,false),dc=poissonMatrix(lh,la,true);const models=[];if(elo)models.push({key:'elo',name:'Elo',weight:.20,probabilities:elo});if(poisson)models.push({key:'poisson',name:'GX/Poisson',weight:.25,probabilities:poisson.probabilities});if(dc)models.push({key:'dixonColes',name:'Dixon-Coles',weight:.15,probabilities:dc.probabilities});if(old)models.push({key:'legacy',name:'旧接口模型',weight:.15,probabilities:old});if(market)models.push({key:'market',name:'体彩SP去水',weight:.25,probabilities:market});const weight=models.reduce((s,x)=>s+x.weight,0),fused=[0,0,0];for(const model of models)for(let i=0;i<3;i++)fused[i]+=model.probabilities[i]*model.weight/weight;const valid=normalize(fused)||[1/3,1/3,1/3],directions=models.map(x=>argmax(x.probabilities)),top=argmax(valid),agree=directions.length?directions.filter(x=>x===top).length/directions.length*100:0;return{models,probabilities:valid,top,modelCount:models.length,consistency:agree,poissonScores:dc?.scores||poisson?.scores||[]}}
+function grade(m,fusion){const p=fusion.probabilities.map(x=>x*100),ordered=[...p].sort((a,b)=>b-a),lead=ordered[0]-ordered[1],sp=!!marketProb(m),samples=sampleCount(m),rel=n(m.dataQuality?.reliability??m.reliability),quality=Math.min(100,samples*4+(sp?25:0)+fusion.modelCount*8);let tier='C',reason='未达到B级门槛';if(sp&&samples>=6&&fusion.modelCount>=4&&fusion.consistency>=70&&quality>=60&&lead>=10&&rel>=45){tier='A';reason='样本、模型数量、一致性、官方SP与方向优势均达到A级'}else if(sp&&samples>=3&&fusion.modelCount>=3&&fusion.consistency>=55&&quality>=40&&lead>=6&&rel>=30){tier='B';reason='具备多模型和市场验证，但未达到A级完整要求'}else if(samples<3)reason=`历史样本不足（${samples}场）`;else if(fusion.modelCount<3)reason=`有效独立模型不足（${fusion.modelCount}个）`;else if(fusion.consistency<55)reason=`模型一致性不足（${fusion.consistency.toFixed(0)}%）`;else if(!sp)reason='缺少完整体彩SP';return{tier,reason,samples,reliability:rel,quality:Math.round(quality),lead:Number(lead.toFixed(1)),modelCount:fusion.modelCount,consistency:Number(fusion.consistency.toFixed(1))}}
+function enrich(m){const fusion=buildModels(m),g=grade(m,fusion);return{...m,homeWinProb:fusion.probabilities[0]*100,drawProb:fusion.probabilities[1]*100,awayWinProb:fusion.probabilities[2]*100,spf:{...(m.spf||{}),homeWinProb:fusion.probabilities[0]*100,drawProb:fusion.probabilities[1]*100,awayWinProb:fusion.probabilities[2]*100,tier:g.tier},score:{...(m.score||{}),topScores:fusion.poissonScores.length?fusion.poissonScores:m.score?.topScores},modelFusion:{version:'V16-P9',probabilities:fusion.probabilities.map(x=>x*100),models:fusion.models.map(x=>({key:x.key,name:x.name,weight:x.weight,probabilities:x.probabilities.map(v=>v*100),direction:['主胜','平局','客胜'][argmax(x.probabilities)]})),modelCount:fusion.modelCount,consistency:Number(fusion.consistency.toFixed(1)),weightsNormalized:true},calibratedTier:g.tier,grading:{version:'V16-P9',...g}}}
+export async function onRequestGet(context){const u=new URL(context.request.url),q=new URLSearchParams();for(const [k,v] of u.searchParams)if(k!=='x')q.set(k,v);if(!q.has('days'))q.set('days','4');try{const r=await fetch(`${UPSTREAM}?${q}`,{headers:{accept:'application/json','user-agent':'Mozilla/5.0'}}),t=await r.text(),x=JSON.parse(t);if(!r.ok||x.success===false)return json({success:false,error:x.error||`upstream ${r.status}`,matches:[]},502);const matches=(Array.isArray(x.matches)?x.matches:[]).map(enrich),gradeCounts=matches.reduce((a,m)=>(a[m.calibratedTier]++,a),{A:0,B:0,C:0});return json({...x,success:true,matches,total:matches.length,gradeCounts,modelVersion:'V16-P9 Model Reintegration',modelNotice:'Elo、GX/Poisson、Dixon-Coles、旧接口模型和体彩SP去水概率按有效输入自动归一化融合。'})}catch(e){return json({success:false,error:e.message,matches:[]},502)}}
