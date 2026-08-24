@@ -1,1 +1,1 @@
-export async function onRequestGet(c){return Response.json({ok:true,footballData:Boolean(c.env.FOOTBALL_DATA_TOKEN),odds:Boolean(c.env.THE_ODDS_API_KEY),context:Boolean(c.env.API_SPORTS_KEY),weather:true,version:'V14.1 Research Platform'})}
+export async function onRequestGet(c){return Response.json({ok:true,version:"V16 Coverage Fusion",lotterySource:"football-predict.pages.dev/api/daily-jingcai",footballData:Boolean(c.env.FOOTBALL_DATA_TOKEN),odds:Boolean(c.env.THE_ODDS_API_KEY),apiSports:Boolean(c.env.API_SPORTS_KEY),updatedAt:new Date().toISOString()})}
